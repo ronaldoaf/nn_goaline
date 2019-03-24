@@ -1,81 +1,83 @@
 import torch
-import matplotlib.pyplot as plt
+from torch.nn import Linear,Tanh,Sequential
+import torch.optim as optim
 
-#Leitura do dataset
-#-----------------------------------------------------------------
 import pandas as pd
-diabetes = pd.read_csv('nn_goaline.csv')
-diabetes.head()
-
-
-#Pre-processamento:
-#--------------------------------------------------------------------
 from sklearn import preprocessing
 
 
 
-diabetes_features=diabetes.loc[:,diabetes.columns!='pl_u']
+df = pd.read_csv('nn_goaline.csv')
+X=df[df.columns[:-1]]
+Y=df[df.columns[-1]]
 
-diabetes_target=diabetes.loc[:,diabetes.columns=='pl_u'].values
+#Coloca os dados em escala 0 a 1
+minmax_scale = preprocessing.MinMaxScaler().fit(X.astype(float))
+X=minmax_scale.transform(X)
 
-# Converte valores para a mesma escala (entre 0 e 1)
 
-print(diabetes_features)
 
-minmax_scale = preprocessing.MinMaxScaler().fit(diabetes_features)
-diabetes_features=minmax_scale.transform(diabetes_features)
 
-print(diabetes_features)
-
-from sklearn.model_selection import train_test_split
-X_train, X_test,Y_train,Y_test = train_test_split(diabetes_features,diabetes_target)
-
-X_train_tensor=torch.from_numpy(X_train).float()
-Y_train_tensor=torch.from_numpy(Y_train).float()
-
-X_test_tensor=torch.from_numpy(X_test).float()
-Y_test_tensor=torch.from_numpy(Y_test).float()
 
 #Define a Rede
 #----------------------------------------------------------------
+D_in=len(X[0])
+D_hidden=4
+D_out=1
 
-from torch.nn import Linear,Tanh,Sequential
-D_in,D_hidden,D_out=22,11,1
-model = Sequential( Linear(D_in,D_hidden),Linear(D_hidden,D_out) )
-
-#model = Sequential( Linear(D_in,D_hidden),Tanh(),Linear(D_hidden,D_out),Tanh() )
+#model=Linear(D_in,D_out)
+#model = Sequential( Linear(D_in,D_hidden),Linear(D_hidden,D_out) )
+model = Sequential( Linear(D_in,D_hidden),Tanh(),Linear(D_hidden,D_out),Tanh() )
     
-minibatch_size=1000
+minibatch_size=2000
+
+D_train=20000
+D_test=10000
+D_step=1000
+
+n_step=0
+
+#pode ser otimizado se utilizar "torch.from_numpy"
+X_train=torch.Tensor(X[n_step*D_step:n_step*D_step+D_train])
+Y_train=torch.Tensor(Y[n_step*D_step:n_step*D_step+D_train].values)
+X_test=torch.Tensor(X[n_step*D_step+D_train:n_step*D_step+D_train+D_test])
+Y_test=torch.Tensor(Y[n_step*D_step+D_train:n_step*D_step+D_train+D_test].values)
+
+
 
 #Inicia os parametros
-with torch.no_grad():
-    for param in model.parameters(): param.fill_(0.0)
+#with torch.no_grad():
+#    for param in model.parameters(): param.uniform_(-1,1)
         
-import torch.optim as optim
 
-optimizer=optim.ASGD(model.parameters())
+
+optimizer=optim.Adam(model.parameters(),0.1)
+
+
+#X_train=torch.
 
 
 #Loop de Treino
-#----------------------------------------------------------------   
-losses={}
 total_loss=0
 total_lucro=0
+losses={}
+#----------------------------------------------------------------   
 for i in range(0,1000):
-    # Seleciona um minibatch aleatório a partir do treino
-    minibatch_index=torch.randperm(X_train_tensor.size(0))
+    # Seleciona um minibatch aleatĂ³rio a partir do treino
+    minibatch_index=torch.randperm(X_train.size(0))
     minibatch_index=minibatch_index[:minibatch_size]
-    minibatch_x=X_train_tensor[minibatch_index]
-    minibatch_y=Y_train_tensor[minibatch_index]
+    minibatch_x=X_train[minibatch_index]
+    minibatch_y=Y_train[minibatch_index]
 
     #Forward pass
     output=model(minibatch_x)
-    #loss=F.soft_margin_loss(output,minibatch_y)
-    loss=torch.exp(-(torch.log(1+output*minibatch_y.clamp(min=0,max=0.2))).sum())
+    
+    #loss=(output-minibatch_y).pow(2).sum()
+    loss=-(output.clamp(min=0)*minibatch_y).mean()
     # Backward pass
     loss.backward()
     total_loss+=loss.item()
-    total_lucro+=(torch.log(1+output*minibatch_y.clamp(min=0,max=0.2))).sum().item()
+    total_lucro+=(output.clamp(min=0.0, max=1.0)*minibatch_y).sum().item()
     # Optimizer pass
     optimizer.step()
     optimizer.zero_grad()
@@ -87,7 +89,3 @@ for i in range(0,1000):
         print(losses[i], total_lucro/i )
         
 
-minibatch_x=X_test_tensor[1000:2000]
-minibatch_y=Y_test_tensor[1000:2000]
-output=model(minibatch_x)
-print( (torch.log(1+output*minibatch_y.clamp(min=0,max=0.2))).sum().item()   ) 
